@@ -1,0 +1,261 @@
+edit_cb_w       = 0
+edit_cb_h       = 0
+edit_cb         = new(1, 1, INT)
+
+edit_hist       = new(PIENO_UNDO_HISTORY, 1, INT) clean(edit_hist)
+edit_hist_pos   = PIENO_UNDO_HISTORY - 1
+edit_hist_split = edit_hist_pos
+
+                  i = 0
+EDIT_NONE     = i i + 1
+EDIT_EVENT    = i i + 1
+EDIT_DELETE   = i i + 1
+EDIT_ELEN_INC = i i + 1
+EDIT_ELEN_DEC = i i + 1
+EDIT_CUT      = i i + 1
+EDIT_COPY     = i i + 1
+EDIT_PASTE    = i i + 1
+EDIT_MERGE    = i i + 1
+EDIT_HDUP     = i i + 1
+EDIT_VDUP     = i i + 1
+EDIT_HFLIP    = i i + 1
+EDIT_VFLIP    = i i + 1
+EDIT_CUTRANSP = i i + 1
+EDIT_CDTRANSP = i i + 1
+EDIT_CLSHIFT  = i i + 1
+EDIT_CRSHIFT  = i i + 1
+EDIT_SHRINK   = i i + 1
+EDIT_EXPAND   = i i + 1
+EDIT_UNDO     = i i + 1
+EDIT_REDO     = i i + 1
+
+
+edit_hist_clean = {
+    for ($i = 0; $i < PIENO_UNDO_HISTORY; $i + 1) {
+        if edit_hist[$i] { remove(edit_hist[$i]) }
+    }
+
+    clean(edit_hist)
+    edit_hist_pos   = PIENO_UNDO_HISTORY - 1
+    edit_hist_split = edit_hist_pos
+}
+
+fn edit($act) {
+    /* Convert selection to operation rectangle */
+    $ka = 119 - ctl_sel_ay
+    $kb = 119 - ctl_sel_by
+
+    $ay = min(ctl_sel_ax, ctl_sel_bx)
+    $ax = min($ka, $kb)
+
+    $by = max(ctl_sel_ax, ctl_sel_bx)
+    $bx = max($ka, $kb)
+
+    $w  = $bx - $ax + 1
+    $h  = $by - $ay + 1
+
+    while (1) {
+        ui_refresh = 1
+
+        if $act == EDIT_NONE { break }
+
+        if $act == EDIT_EVENT {
+            pat[$bx, $ay] = ctl_evt_len
+            ui_msg("Event set")
+            break
+        }
+
+        if $act == EDIT_DELETE {
+            op_cn(OP_COPY, pat, 0, $ax, $ay, $w, $h)
+            ctl_sel_bx = ctl_sel_ax
+            ctl_sel_by = ctl_sel_ay
+            ctl_sel(0, 0, 0)
+            ui_msg("Events deleted")
+            break
+        }
+
+        if in($act, EDIT_ELEN_INC, EDIT_ELEN_DEC) {
+            for ($i = $ax; $i <= $bx; $i + 1) {
+                for ($j = $ay; $j <= $by; $j + 1) {
+                    $not_zero = !!pat[$i, $j]
+                    pat[$i, $j] - ($act == EDIT_ELEN_DEC && $not_zero)
+                    pat[$i, $j] + ($act == EDIT_ELEN_INC && $not_zero)
+                }
+            }
+            ui_msg("Event length(s) changed")
+            break
+        }
+
+        if in($act, EDIT_CUT, EDIT_COPY) {
+            if $w > edit_cb_w || $h > edit_cb_h {
+                resize(edit_cb, max($w, edit_cb_w), max($h, edit_cb_h))
+                clean(edit_cb)
+            }
+            edit_cb_w = $w
+            edit_cb_h = $h
+
+            op_cc(OP_COPY, edit_cb, pat, 0, 0, $ax, $ay, $w, $h)
+
+            ctl_sel_bx = ctl_sel_ax
+            ctl_sel_by = ctl_sel_ay
+            ctl_sel(0, 0, 0)
+
+            if $act == EDIT_CUT {
+                op_cn(OP_COPY, pat, 0, $ax, $ay, $w, $h)
+                ui_msg("Events cut to clipboard")
+                break
+            }
+
+            ui_msg("Events copied to clipboard")
+            break
+        }
+
+        if in($act, EDIT_MERGE, EDIT_PASTE) {
+            if !(edit_cb_w * edit_cb_h)
+                { ui_msg("Clipboard is empty") break }
+
+            $op = OP_COPY
+            if $act == EDIT_MERGE { $op = OP_COPY_LESS }
+
+            op_cc($op, pat, edit_cb, $ax - (edit_cb_w - 1),
+                            $ay, 0, 0, edit_cb_w, edit_cb_h)
+
+            ui_msg("Events pasted from clipboard")
+            break
+        }
+
+        if $act == EDIT_HDUP {
+            op_cc(OP_COPY, pat, pat, $ax, $ay + $h, $ax, $ay, $w, $h)
+
+            ctl_sel_ax + $h
+            ctl_sel_bx + $h
+            ctl_sel(0, 0, 1)
+
+            ui_msg("Events duplicated horizontally")
+            break
+        }
+
+        if $act == EDIT_VDUP {
+            op_cc(OP_COPY, pat, pat, $ax + $w, $ay, $ax, $ay, $w, $h)
+
+            ctl_sel_ay - $w
+            ctl_sel_by - $w
+            ctl_sel(0, 0, 1)
+
+            ui_msg("Events duplicated vertically")
+            break
+        }
+
+        if in($act, EDIT_HFLIP, EDIT_VFLIP) {
+            $op  = OP_V_FLIP
+            $msg = "Events flipped horizontally"
+
+            if $act == EDIT_VFLIP {
+                $op  = OP_H_FLIP
+                $msg = "Events flipped vertically"
+            }
+
+            op_cn($op, pat, 0, $ax, $ay, $w, $h)
+
+            ui_msg($msg)
+            break
+        }
+
+        if in($act, EDIT_CUTRANSP, EDIT_CDTRANSP) {
+            if $w < 2 { ret }
+
+            $up   = ($act == EDIT_CUTRANSP)
+            $from = choice($up, $ax, $ax + $w - 2)
+            $to   = choice($up, $ax + $w - 1, $ax - 1)
+            $dir  = choice($up, 1, -1)
+
+            for ($i = $from; $i != $to; $i + $dir) {
+                op_cn(OP_H_FLIP, pat, 0, $i, $ay, 2, $h)
+            }
+            ui_msg("Events cyclically transposed")
+            break
+        }
+
+        if in($act, EDIT_CLSHIFT, EDIT_CRSHIFT) {
+            if $h < 2 { ret }
+
+            $right = ($act == EDIT_CRSHIFT)
+            $from  = choice($right, $ay, $ay + $h - 2)
+            $to    = choice($right, $ay + $h - 1, $ay - 1)
+            $dir   = choice($right, 1, -1)
+
+            for ($i = $from; $i != $to; $i + $dir) {
+                op_cn(OP_V_FLIP, pat, 0, $ax, $i, $w, 2)
+            }
+
+            ui_msg("Events cyclically shifted")
+            break
+        }
+
+        if $act == EDIT_SHRINK {
+            pat_len >> 1
+            resize(pat, 120, pat_len, -1, RESIZE_INTERP1)
+            op_cn(OP_RSHIFT, pat, 1)
+            ui_msg("Pattern shrunk")
+            break
+        }
+
+        if $act == EDIT_EXPAND {
+            pat_len << 1
+            resize(pat, 120, pat_len, -1, RESIZE_INTERP1)
+            op_cn(OP_LSHIFT, pat, 1)
+
+            for ($i = 0; $i < pat; $i + 2) {
+                op_cn(OP_COPY, pat, 0, 0, $i + 1, 120, 1)
+            }
+            ui_msg("Pattern expanded")
+            break
+        }
+
+        if $act == EDIT_UNDO {
+            $pos = edit_hist_pos
+            if !edit_hist[$pos] { ret }
+
+            $pos - 1
+            if $pos < 0 { $pos + PIENO_UNDO_HISTORY }
+            if $pos == edit_hist_split || !edit_hist[$pos] { ret }
+
+            pat_len = get_ysize(edit_hist[$pos])
+            if pat_len < get_ysize(pat) { resize(pat, -1, pat_len) }
+            copy(pat, edit_hist[$pos])
+
+            edit_hist_pos = $pos
+            ui_msg("Action undone")
+            ret
+        }
+
+        if $act == EDIT_REDO {
+            $pos = edit_hist_pos
+            if !edit_hist[$pos] || $pos == edit_hist_split { ret }
+
+            $pos = ($pos + 1) % PIENO_UNDO_HISTORY
+
+            pat_len = get_ysize(edit_hist[$pos])
+            if pat_len < get_ysize(pat) { resize(pat, -1, pat_len) }
+            copy(pat, edit_hist[$pos])
+
+            edit_hist_pos = $pos
+            ui_msg("Action redone")
+            ret
+        }
+
+        ui_msg("ERROR: Wrong edit action")
+        ret
+    }
+
+    edit_hist_pos   = (edit_hist_pos + 1) % PIENO_UNDO_HISTORY
+    edit_hist_split = edit_hist_pos
+
+    if !edit_hist[edit_hist_pos] {
+        edit_hist[edit_hist_pos] = clone(pat)
+        resize(edit_hist[edit_hist_pos], -1, pat_len) ret
+    }
+
+    resize(edit_hist[edit_hist_pos], -1, pat_len)
+    copy(edit_hist[edit_hist_pos], pat)
+}

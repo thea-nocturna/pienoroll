@@ -1,0 +1,135 @@
+pb_midi    = -1
+pb_midi_p  = -1
+pb_midi_c = 0
+
+pb_tick = 0
+pb_line = 0
+
+pb_status = 0
+
+PB_STATUS_MIDIOUT    = 0b00000001
+PB_STATUS_IS_PLAYING = 0b00000010
+PB_STATUS_STOP_REQ   = 0b00000100
+
+pb_evt_dur_t = new(120, 1, INT)
+
+fn pb_event($note, $velocity, $cmd) {
+    if !(pb_status & PB_STATUS_MIDIOUT) { ret }
+
+    $evt = "\0\0\0\0\0\0\0\0"
+    $evt[0] = $cmd + pb_midi_c
+    $evt[1] = $note
+    $evt[2] = 0x7F
+
+    midi_send_event(pb_midi, pb_midi_p,
+                    $evt, 3, get_ticks())
+}
+
+fn pb_thread() {
+    pb_status | PB_STATUS_IS_PLAYING
+
+    pb_tick = 0
+
+    pb_loop:
+    if !pb_tick {
+        for ($note = 0; $note < 120; $note + 1) {
+            if pb_evt_dur_t[$note] {
+                pb_evt_dur_t[$note] - 1
+
+                if !pb_evt_dur_t[$note] {
+                    pb_event($note, 0x7F, 0x80)
+                }
+            }
+
+            $len = pat[$note, pb_line]
+            if !$len { continue }
+
+            if pb_evt_dur_t[$note] {
+                pb_event($note, 0x7F, 0x80)
+            }
+
+            pb_evt_dur_t[$note] = $len
+            pb_event($note, 0x7F, 0x90)
+        }
+
+        pb_line = (pb_line + 1) % pat_len
+        if !ui_help { ui_refresh = 1 }
+    }
+
+    pb_tick = (pb_tick + 1) % pat_tpl
+    sleep(60000 / (pat_bpm * 24))
+
+    if !(pb_status & PB_STATUS_STOP_REQ) { go pb_loop }
+
+    for ($note = 0; $note < 120; $note + 1) {
+        if pb_evt_dur_t[$note] {
+            pb_event($note, 0x7F, 0x80)
+        }
+    }
+
+    pb_status & ~PB_STATUS_IS_PLAYING
+    pb_status & ~PB_STATUS_STOP_REQ
+
+    ui_refresh = 1
+}
+
+fn pb_stop() {
+    if pb_status & PB_STATUS_IS_PLAYING {
+        pb_status | PB_STATUS_STOP_REQ
+    }
+
+    while pb_status & PB_STATUS_IS_PLAYING {}
+}
+
+fn pb_play($pos) {
+    if !(pb_status & PB_STATUS_MIDIOUT) {
+        ui_msg("MIDI out is not initialized") ret
+    }
+
+    pb_line = $pos
+
+    if pb_status & PB_STATUS_IS_PLAYING { ret }
+
+    clean(pb_evt_dur_t)
+
+    if thread_create(pb_thread, 0, THREAD_FLAG_AUTO_DESTROY) < 0 {
+        ui_msg("ERROR: Can't create playback thread") ret
+    }
+
+    ui_msg("Playback started")
+}
+
+fn pb_midiout_init() {
+    if pb_status & PB_STATUS_MIDIOUT { ret }
+    pb_midi = midi_open_client("pienoroll.pixi")
+
+    if pb_midi < 0 { ui_msg("ERROR: Can't open MIDI client") ret }
+
+    pb_midi_p = midi_open_port(pb_midi, "port", "", MIDI_PORT_WRITE)
+
+    if pb_midi_p < 0 {
+        midi_close_client(pb_midi)
+        pb_midi = -1
+        ui_msg("ERROR: Can't open MIDI port for writing.")
+        ret
+    }
+
+    pb_status | PB_STATUS_MIDIOUT
+    ui_msg("MIDI Out initialized")
+}
+
+fn pb_midiout_deinit() {
+    pb_stop()
+
+    if pb_midi_p >= 0 {
+        midi_close_port( pb_midi, pb_midi_p )
+        pb_midi_p = -1
+    }
+    if pb_midi >= 0 {
+        midi_close_client(pb_midi)
+        pb_midi = -1
+    }
+
+    pb_status & ~PB_STATUS_MIDIOUT
+    ui_msg("MIDI Out deinitialized")
+}

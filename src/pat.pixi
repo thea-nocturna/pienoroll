@@ -1,0 +1,200 @@
+pat_bpm   = PIENO_DEF_BPM
+pat_tpl   = PIENO_DEF_TPL
+pat_lpb   = PIENO_DEF_LPB
+pat_bpb   = PIENO_DEF_BPB
+pat_mod   = PIENO_DEF_MOD
+pat_len   = PIENO_DEF_PAT_LEN
+
+pat       = new(120, pat_len, INT)
+               clean(pat)
+
+pat_fname = "\0"
+pat_bar   = { ret (pat_lpb * pat_bpb) }
+
+edit_hist_clean()
+edit(EDIT_NONE)
+
+fn pat_save() {
+    if !pat_fname[0] {
+        $fname = file_dialog("Save pattern to file", "pat", "pienoroll")
+
+        if ($fname > 0) {
+            strcat(pat_fname, $fname)
+            remove($fname)
+        } else {
+            ui_msg("Pattern wasn't saved")
+            ret
+        }
+    }
+
+    resize(pat, -1, pat_len, INT)
+
+    pat.bpm    = pat_bpm
+    pat.tpl    = pat_tpl
+    pat.lpb    = pat_lpb
+    pat.bpb    = pat_bpb
+    pat.module = pat_mod
+
+    save(pat, pat_fname, FORMAT_PIXICONTAINER)
+
+    ui_msg("Pattern saved")
+}
+
+fn pat_saveas() {
+    $fname_0 = pat_fname[0]
+    pat_fname[0] = 0
+
+    pat_save()
+
+    if !pat_fname[0] { pat_fname[0] = $fname_0 }
+}
+fn pat_open() {
+    $fname = file_dialog("Select pattern", "pat", "pienoroll")
+
+    if ($fname < 0) {
+        ui_msg("Pattern wasn't loaded")
+        ret
+    }
+
+
+    pb_stop()
+
+    remove(pat)
+
+    pat     = load($fname)
+    pat_bpm = pat.bpm
+    pat_tpl = pat.tpl
+    pat_lpb = pat.lpb
+    pat_bpb = pat.bpb
+    pat_mod = pat.module
+    pat_len = get_ysize(pat)
+
+    pat_fname[0] = 0
+    strcat(pat_fname, $fname)
+    remove($fname)
+
+    ctl_sel_bx = 0
+    ctl_sel_by = 119 - PIENO_DEF_NOTE
+
+    ctl_sel_ax = ctl_sel_bx
+    ctl_sel_ay = ctl_sel_by
+
+    ui_cam_x = 0
+    ui_cam_y = ctl_sel_by - (ui_cam_h >> 1)
+
+    ctl_sel(0, 0, 0)
+
+    edit_hist_clean()
+    edit(EDIT_NONE)
+
+    ui_msg("Pattern loaded")
+    ui_status()
+}
+fn pat_new() {
+
+    clean(pat)
+
+    pat_bpm = PIENO_DEF_BPM
+    pat_tpl = PIENO_DEF_TPL
+    pat_lpb = PIENO_DEF_LPB
+    pat_bpb = PIENO_DEF_BPB
+    pat_mod = PIENO_DEF_MOD
+    pat_len = PIENO_DEF_PAT_LEN
+
+    pat_fname[0] = 0
+
+    ctl_sel_bx = 0
+    ctl_sel_by = 119 - PIENO_DEF_NOTE
+
+    ctl_sel_ax = ctl_sel_bx
+    ctl_sel_ay = ctl_sel_by
+
+    ui_cam_x = 0
+    ui_cam_y = ctl_sel_by - (ui_cam_h >> 1)
+
+    ctl_sel(0, 0, 0)
+
+    edit_hist_clean()
+    edit(EDIT_NONE)
+
+    ui_msg("New pattern created")
+    ui_status()
+}
+
+pat_c2sv_dur_t    = new(120, 2, INT)
+pat_c2sv_trk_mask = 0
+
+fn pat_c2sv_trk_occupy() {
+    for ($trk = 0; $trk < 32; $trk + 1) {
+        $trk_flag = 1 << $trk
+        if !(pat_c2sv_trk_mask & $trk_flag) {
+            pat_c2sv_trk_mask | $trk_flag
+            ret ($trk)
+        }
+    }
+}
+
+fn pat_c2sv() {
+    $sv = sv_new()
+
+    sv_lock($sv)
+
+    $pat = sv_new_pattern($sv, -1, 0, 0, 32, pat_len)
+
+    clean(pat_c2sv_dur_t, 0)
+    pat_c2sv_trk_mask = 0
+
+    $max_trk = 0
+
+    for ($l = 0; $l < pat_len; $l + 1) {
+        for ($k = 0; $k < 120; $k + 1) {
+            if !pat_c2sv_dur_t[$k, 0] { continue }
+            pat_c2sv_dur_t[$k, 0] - 1
+            if pat_c2sv_dur_t[$k, 0] { continue }
+
+            $trk = pat_c2sv_dur_t[$k, 1]
+            pat_c2sv_trk_mask & ~(1 << $trk)
+            sv_set_pattern_event($sv, $pat, $trk,
+                                 $l, NOTECMD_NOTE_OFF)
+        }
+        for ($k = 0; $k < 120; $k + 1) {
+            $dur = pat[$k, $l]
+            if !$dur { continue }
+
+            $trk = pat_c2sv_dur_t[$k, 1]
+            if !pat_c2sv_dur_t[$k, 0] {
+                $trk = pat_c2sv_trk_occupy()
+                pat_c2sv_dur_t[$k, 1] = $trk
+            }
+
+            pat_c2sv_dur_t[$k, 0] = $dur
+            sv_set_pattern_event($sv, $pat, $trk, $l,
+                                 $k + 1, -1, pat_mod + 1)
+
+            $max_trk = max($trk, $max_trk)
+        }
+    }
+
+    sv_set_pattern_size($sv, $pat, $max_trk + 1, -1)
+
+    sv_unlock($sv)
+    sv_save($sv, PIENO_SV_CLIP)
+    sv_remove($sv)
+
+    ui_msg("Pattern copied to SunVox clipboard")
+}
+
+fn pat_set_len($size) {
+    if ($size <= 0) { ret }
+
+    $l = get_ysize(pat)
+
+    if ($size > $l) {
+        resize(pat, -1, $size)
+        clean(pat, 0, 120 * $l, 120 * ($size - $l))
+    }
+
+    pat_len = $size
+
+    edit(EDIT_NONE)
+}

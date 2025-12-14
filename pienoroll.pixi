@@ -1,0 +1,44 @@
+#!/usr/bin/env -S pixilang -cfg int_font_scaling=1|nofrecent|ppi=110
+
+/* ==========================================================================
+   CONFIG
+   ========================================================================== */
+
+PIENO_GREETING = "Welcome to PIENOROLL EDITOR"
+
+/* SunVox clipboard's path */
+PIENO_SV_CLIP = "1:/.sunvox_clipboard.sunpats"
+
+/* Project defaults */
+PIENO_DEF_BPM     = 125
+PIENO_DEF_TPL     = 6
+PIENO_DEF_LPB     = 4
+PIENO_DEF_BPB     = 4
+PIENO_DEF_MOD     = 0
+PIENO_DEF_PAT_LEN = 128
+
+/* Editing defaults */
+PIENO_DEF_NOTE     = 12 * 5
+PIENO_DEF_EVT_LEN  = 2
+PIENO_UNDO_HISTORY = 100
+PIENO_SCALE        = 0b101010110101 /* C major / A minor */
+
+/* Text buffer */
+TB_W       = 80
+TB_H       = 30
+TB_FONT    = "assets/font_spleen.png"
+TB_PALETTE = "assets/palette.png"
+
+/* ==========================================================================
+   INCLUDES
+   ========================================================================== */
+
+include "src/utils.pixi"
+include "src/tb.pixi"
+include "src/edit.pixi"
+include "src/pat.pixi"
+include "src/pb.pixi"
+include "src/ctl.pixi"
+include "src/help.pixi"
+include "src/ui.pixi"
+include "src/main.pixi"

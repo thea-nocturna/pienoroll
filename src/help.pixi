@@ -1,0 +1,7 @@
+help       = load("assets/help.txt", LOAD_AS_RAW)
+help_len   = strlen(help)
+help_lines = 1
+
+for (i = 0; i < help_len; i + 1) {
+    help_lines + (help[i] == '\n')
+}

@@ -1,0 +1,98 @@
+                        PIENOROLL - KEYBOARD CONTROLS
+
+| Use the up/down arrows or mouse wheel to scroll through the document.
+| Pressing F1 again will close the help.
+
+-------------------------------------------------------------------------
+NAVIGATION & SELECTION
+-------------------------------------------------------------------------
+Arrow Keys           Move cursor
+Shift+Arrows         Extend selection
+Ctrl+Arrows          Move cursor by bar/octave
+Alt+Arrows           Move cursor by beat/6 semitones
+Home                 Move cursor to first line
+End                  Move cursor to last line
+PageUp/Down          Move cursor vertically by screen height
+Ctrl+A               Select all notes in pattern
+
+-------------------------------------------------------------------------
+BRUSH & EVENT EDITING
+-------------------------------------------------------------------------
+Space                Place/edit note event at cursor
+Shift+Space          Place note and move to next two valid scale notes
+[ / ]                Decrease/Increase event length at cursor
+Ctrl+[ / Ctrl+]      Decrease/Increase length for all notes in selection
+Delete               Delete note(s) in selection
+
+-------------------------------------------------------------------------
+MOUSE CONTROL
+-------------------------------------------------------------------------
+Left Click           Move cursor to clicked position
+Double-Click         Place note at clicked position
+Mouse Drag (LMB)     Extend selection from initial cursor position
+Mouse Wheel          Move cursor vertically
+Ctrl+Mouse Wheel     Move cursor horizontally
+Alt+Mouse Wheel      Decrease/Increase event length (like [ / ])
+
+-------------------------------------------------------------------------
+PATTERN OPERATIONS
+-------------------------------------------------------------------------
+Ctrl+Z / Ctrl+Y      Undo/Redo action
+Ctrl+X               Cut selection to clipboard
+Ctrl+C               Copy selection to clipboard
+Ctrl+V               Paste clipboard (overwrite)
+Ctrl+M               Paste clipboard (merge, keep longer notes)
+Ctrl+D               Duplicate selection horizontally (right)
+Ctrl+Shift+D         Duplicate selection vertically (up)
+Ctrl+;               Flip selection horizontally
+Ctrl+'               Flip selection vertically
+Ctrl+I / Ctrl+K      Cyclic transposition up/down
+Ctrl+J / Ctrl+L      Cyclic shift left/right
+Ctrl+, / Ctrl+.      Shrink/expand pattern
+
+-------------------------------------------------------------------------
+PROJECT & PLAYBACK
+-------------------------------------------------------------------------
+Ctrl+N               New pattern
+Ctrl+O               Open pattern
+Ctrl+S               Save pattern
+Ctrl+Shift+S         Save pattern as...
+F9                   Start playback from beginning
+F10                  Start playback from cursor line
+F11                  Stop playback
+F12                  Initialize MIDI output
+Shift+F12            Deinitialize MIDI output
+Ctrl+F12             Cycle MIDI channel (1-16)
+Ctrl+E               Copy pattern to SunVox clipboard
+
+-------------------------------------------------------------------------
+PATTERN PARAMETERS
+-------------------------------------------------------------------------
+F3 / F4              Decrease/Increase pattern size (lines)
+Ctrl+F3 / Ctrl+F4    Decrease/Increase by 16 lines
+Shift+F3 / Shift+F4  Decrease/Increase module number
+F5 / F6              Decrease/Increase BPM
+Shift+F5 / Shift+F6  Decrease/Increase TPL (ticks per line)
+F7 / F8              Decrease/Increase LPB (lines per beat)
+Shift+F7 / Shift+F8  Decrease/Increase BPB (beats per bar)
+
+-------------------------------------------------------------------------
+KEYBOARD PIANO (KEYJAZZ)
+-------------------------------------------------------------------------
+ZSXDCVGBHNJM         Play notes C to B (in the oct. where the cursor is)
+Q2W3ER5T6Y7U         Play notes C to B (in the next octave from cursor)
+                     (Note: Requires initialized MIDI output)
+
+-------------------------------------------------------------------------
+SCALE SETTINGS
+-------------------------------------------------------------------------
+Ctrl+\               Rotate scale down
+Ctrl+Shift+\         Rotate scale up
+Ctrl+/               Enter scale via text input (12-bit value)
+Ctrl+Shift+/         Reset scale to default
+
+-------------------------------------------------------------------------
+MISC
+-------------------------------------------------------------------------
+F1                   Show this help
+F2                   Show status strip

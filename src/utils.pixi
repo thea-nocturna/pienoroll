@@ -1,0 +1,28 @@
+fn clamp($a, $n, $b) {
+    ret (min($b, max($n, $a)))
+}
+
+fn max($a, $b) {
+    if $a > $b { ret ($a) }
+    ret ($b)
+}
+
+fn min($a, $b) {
+    if $a < $b { ret ($a) }
+    ret ($b)
+}
+
+fn in($n) {
+    for ($i = 1; $i < $0; $i + 1)
+        { if $n == $[$i] { ret (1) } }
+    ret (0)
+}
+
+fn choice($i) {
+    $i + 1 ret ($[$i])
+}
+
+fn pointrect($x, $y, $rx, $ry, $rw, $rh) {
+    ret ($x >= $rx && $x < $rx + $rw &&
+         $y >= $ry && $y < $ry + $rh)
+}

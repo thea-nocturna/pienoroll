@@ -1,0 +1,46 @@
+if (!TB_W) { TB_W = 80 }
+if (!TB_H) { TB_H = 30 }
+
+if (!TB_FONT)    { TB_FONT    = "assets/font_ibm_vga.png" }
+if (!TB_PALETTE) { TB_PALETTE = "assets/palette.png" }
+
+TB         = new(TB_W, TB_H, INT16) clean(TB)
+tb_palette = load(TB_PALETTE)
+tb_font    = load(TB_FONT) set_key_color(tb_font, 0)
+tb_blink_c = 0
+tb_blink_r = 0b100000
+tb_blink_m = tb_blink_r - 1
+
+resize(get_screen(), TB_W << 3, TB_H << 4)
+
+fn tb_frame($permit) {
+    if !$permit && !!(tb_blink_c & tb_blink_m) { go tb_frame_discard }
+
+    for ($i = 0; $i < TB_W; $i + 1) {
+        for ($j = 0; $j < TB_H; $j + 1) {
+            $entry  = TB[$i, $j]
+
+            $char   =  $entry       & 0xFF
+            $attrib = ($entry       & 0xFFFF)  >> 8
+            $fgcol  =  $attrib      & 15
+            $bgcol  =  $attrib >> 4 & 7
+            $blink  =  $attrib >> 7 & 1
+
+            $x = -(TB_W << 2) + ($i << 3)
+            $y = -(TB_H << 3) + ($j << 4)
+
+            fbox($x, $y, 8, 16, tb_palette[$bgcol])
+
+            if ($blink && tb_blink_c & tb_blink_r) { continue }
+
+            pixi(
+                tb_font, $x + 4, $y + 8,
+                tb_palette[$fgcol],
+                1, 1, ($char & 15) << 3, ($char >> 4) << 4, 8, 16
+            )
+        }
+    }
+
+    tb_frame_discard:
+    tb_blink_c = tb_blink_c + 1 & 0xFF;
+}

@@ -1,0 +1,256 @@
+ui_refresh    = 1
+ui_msg_str    = ""
+
+ui_keys       = "CcDdEFfGgAaB"
+ui_keys_size  = 4
+ui_keys_scale = PIENO_SCALE
+
+ui_cam_w      = TB_W - ui_keys_size
+ui_cam_h      = TB_H
+ui_cam_x      = 0
+ui_cam_y      = ctl_sel_by - (ui_cam_h >> 1)
+
+ui_help       = 0
+ui_help_line  = 0
+
+fn ui_status() {
+    ui_bpmtpl  = 0xFF
+    ui_grid    = 0xFF
+    ui_brush   = 0xFF
+    ui_pat_len = 0xFF
+    ui_module  = 0xFF
+    ui_refresh = 1
+} ui_status()
+
+fn ui_msg($msg) {
+    ui_msg_str[0] = 0
+    ui_msg_t = 0xFF
+    strcat(ui_msg_str, $msg)
+    ui_refresh = 1
+}
+
+fn ui_timers() {
+    $have_timers = !!ui_msg_t     +
+                   !!ui_bpmtpl    +
+                   !!ui_grid      +
+                   !!ui_brush     +
+                   !!ui_pat_len   +
+                   !!ui_module
+
+    if !$have_timers { ret }
+
+    ui_msg_t     - !!ui_msg_t
+    ui_bpmtpl    - !!ui_bpmtpl
+    ui_grid      - !!ui_grid
+    ui_brush     - !!ui_brush
+    ui_pat_len   - !!ui_pat_len
+    ui_module    - !!ui_module
+
+    $have_timers_now = !!ui_msg_t     +
+                       !!ui_bpmtpl    +
+                       !!ui_grid      +
+                       !!ui_brush     +
+                       !!ui_pat_len   +
+                       !!ui_module
+
+    if $have_timers == $have_timers_now { ret }
+    ui_refresh = 1
+}
+
+fn ui_render() {
+    if !ui_refresh { ret }
+
+    clean(TB, 0x700)
+
+    if (ui_help) {
+        $off = 0
+        $help_l = 0
+
+        for ($i = 0; $i < help_len && $off < TB_W * TB_H; $i + 1) {
+            $char = help[$i]
+
+            if $help_l < ui_help_line {
+                $help_l + ($char =='\n') continue
+             }
+            if $char == '\n'{
+                $off = $off div TB_W * TB_W + TB_W continue
+            }
+
+            TB[$off] | ($char & 0xFF)
+            $off + 1
+        }
+
+        ui_refresh = 0
+        ret
+    }
+
+    /* Follow cusror when it's going out of screen */
+    if ctl_sel_bx >= ui_cam_x + ui_cam_w
+        { ui_cam_x = ctl_sel_bx - ui_cam_w + 1 }
+    if ctl_sel_bx < ui_cam_x
+        { ui_cam_x = ctl_sel_bx }
+    if ctl_sel_by >= ui_cam_y + ui_cam_h
+        { ui_cam_y = ctl_sel_by - ui_cam_h + 1 }
+    if ctl_sel_by < ui_cam_y
+        { ui_cam_y = ctl_sel_by }
+
+    /* Pattern */
+    $pat_d_w = min(pat_len - ui_cam_x, ui_cam_w)
+
+    op_cn(OP_COPY, TB, 0x800 | '.', ui_keys_size, 0, $pat_d_w, ui_cam_h)
+
+    $bar_len = pat_bar()
+
+    for ($bar = 0; $bar < ui_cam_w; $bar + $bar_len) {
+        for ($beat = 0; $beat < pat_bpb; $beat + 1) {
+
+            $x = $bar + (($beat * pat_lpb - ui_cam_x)
+                         % $bar_len + $bar_len) % $bar_len
+
+            if $x >= ui_cam_w { continue }
+
+            $x + ui_keys_size
+
+            op_cn(OP_COPY, TB, (0x800 - 0x100 *
+                  !$beat) | ':', $x, 0, 1, ui_cam_h)
+
+            for ($oct = 0; $oct < ui_cam_h && !$beat; $oct + 12) {
+                $y = $oct + ((11 - ui_cam_y) % 12 + 12) % 12
+                if $y >= ui_cam_h { continue }
+                TB[$x, $y] | 0xFE
+            }
+        }
+    }
+
+    /* Piano keyboard */
+    $evts_end = min(ui_cam_x+ui_cam_w, pat_len)
+
+    for ($row = 0; $row < ui_cam_h; $row + 1) {
+        $note = 119 - $row - ui_cam_y;
+        $key = $note % 12
+        $key_letter = ui_keys[$key]
+
+        if ui_keys_scale & (1 << $key)
+            { op_cn(OP_LSHIFT, TB, 4, 0, $row, 4, 1) }
+
+        TB[0, $row] | $key_letter
+        TB[1, $row] | ('0' + $note div 12)
+
+        $length_counter = 0
+
+        for ($line = 0; $line < $evts_end; $line + 1) {
+            $length = pat[$note, $line]
+            if ($length) { $length_counter = $length }
+
+            if ($line >= ui_cam_x && $length_counter) {
+                $sym = 0xB1 if ($length) { $sym = 0xDB }
+
+                TB[ui_keys_size +
+                    $line - ui_cam_x, $row] = 0x0E00 | $sym
+            }
+            $length_counter - !!$length_counter
+        }
+    }
+
+    /* Keyjazz */
+    for ($kj = 0; $kj < 24; $kj + 1) {
+        $oct = ctl_keyjazz[$kj]
+        if !$oct { continue }
+        $row = 119 - (($oct - 1) * 12 + $kj)
+        if $row < ui_cam_y || $row >= ui_cam_y + ui_cam_h { continue }
+        TB[2, $row - ui_cam_y] | 0x11
+    }
+
+    /* Cursor thing */
+    TB[ui_keys_size - 1, ctl_sel_by - ui_cam_y] | 0x2A
+
+    /* Playhead */
+    if (pb_line >= ui_cam_x &&
+        pb_line < ui_cam_x + ui_cam_w &&
+        pb_status & PB_STATUS_IS_PLAYING) {
+        $x = ui_keys_size + pb_line - ui_cam_x
+
+        op_cn(OP_AND, TB, 0xFF, $x, 0, 1, ui_cam_h)
+        op_cn(OP_OR, TB, 0x7000, $x, 0, 1, ui_cam_h)
+    }
+
+    /* Selection */
+    $ax = min(ctl_sel_ax, ctl_sel_bx)
+    $ay = min(ctl_sel_ay, ctl_sel_by)
+
+    $bx = max(ctl_sel_ax, ctl_sel_bx)
+    $by = max(ctl_sel_ay, ctl_sel_by)
+
+    if pointrect($ax, $ay, ui_cam_x, ui_cam_y, ui_cam_w, ui_cam_h) ||
+       pointrect($bx, $by, ui_cam_x, ui_cam_y, ui_cam_w, ui_cam_h) {
+
+        $ax = clamp(0, $ax - ui_cam_x, ui_cam_w)
+        $ay = clamp(0, $ay - ui_cam_y, ui_cam_h)
+
+        $bx = clamp(0, $bx - ui_cam_x, ui_cam_w)
+        $by = clamp(0, $by - ui_cam_y, ui_cam_h)
+
+        $w = $bx - $ax + 1
+        $h = $by - $ay + 1
+
+        $ax + ui_keys_size
+
+        op_cn(OP_AND, TB, 0x00FF, $ax, $ay, $w,  $h)
+        op_cn(OP_OR,  TB, 0xE000, $ax, $ay, $w,  $h)
+
+    }
+
+    /* Message string */
+    if (ui_msg_t) {
+        $msg_len = strlen(ui_msg_str)
+        $off = TB_W - $msg_len
+        copy(TB, ui_msg_str, $off, 0, $msg_len)
+        op_cn(OP_OR, TB, 0xF000, $off, $msg_len)
+    }
+
+    /* Status string */
+    $ststr_sep = " | "
+    $ststr_tmp = ""
+    $ststr     = ""
+    $ststr[0]  = 0
+
+    if ui_bpmtpl {
+        sprintf($ststr_tmp, "\x03%d/%d", pat_bpm, pat_tpl)
+        strcat($ststr, $ststr_tmp)
+    }
+    if ui_grid {
+        if $ststr[0] { strcat($ststr, $ststr_sep) }
+        sprintf($ststr_tmp, "#%d/%d", pat_lpb, pat_bpb)
+        strcat($ststr, $ststr_tmp)
+    }
+    if ui_pat_len {
+        if $ststr[0] { strcat($ststr, $ststr_sep) }
+        sprintf($ststr_tmp, "t=%02x", pat_len)
+        strcat($ststr, $ststr_tmp)
+    }
+    if ui_module {
+        if $ststr[0] { strcat($ststr, $ststr_sep) }
+        sprintf($ststr_tmp, "m=%02x", pat_mod)
+        strcat($ststr, $ststr_tmp)
+    }
+    if ui_brush {
+        if $ststr[0] { strcat($ststr, $ststr_sep) }
+        $note = (119-ctl_sel_by)
+        $key = ui_keys[$note % 12]
+        $oct = $note div 12
+
+        sprintf($ststr_tmp, "\x0d%c%d \x1d%02x @%02x",
+                $key, $oct, ctl_evt_len, ctl_sel_bx)
+
+        strcat($ststr, $ststr_tmp)
+    }
+
+    if $ststr[0] {
+        $len = strlen($ststr)
+        $off = TB_W * TB_H - $len
+        copy(TB, $ststr, $off, 0, $len)
+        op_cn(OP_OR, TB, 0x7000, $off, $len)
+    }
+
+    ui_refresh = 0
+}

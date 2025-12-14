@@ -1,0 +1,429 @@
+ctl_sel_bx    = 0
+ctl_sel_by    = 119 - PIENO_DEF_NOTE
+ctl_sel_ax    = ctl_sel_bx
+ctl_sel_ay    = ctl_sel_by
+
+ctl_evt_len   = PIENO_DEF_EVT_LEN
+
+ctl_keyjazz   = new(24, 1, INT8) clean(ctl_keyjazz)
+ctl_note_prev = 0
+
+ctl_mouse_l   = 0
+ctl_mouse_r   = 0
+
+fn ctl_sel($xstep, $ystep, $rect) {
+    ctl_sel_bx + $xstep
+    ctl_sel_by + $ystep
+
+    if !$rect { ctl_sel_ax = ctl_sel_bx
+                ctl_sel_ay = ctl_sel_by }
+
+    ctl_sel_bx = clamp(0, ctl_sel_bx, pat_len - 1)
+    ctl_sel_by = clamp(0, ctl_sel_by, 119)
+    ctl_sel_ax = clamp(0, ctl_sel_ax, pat_len - 1)
+    ctl_sel_ay = clamp(0, ctl_sel_ay, 119)
+
+    ui_brush = 0xFF
+    ui_refresh = 1
+}
+
+ctl_sel_aob = { ret (ctl_sel_bx >= pat_len ||
+                     ctl_sel_ax >= pat_len) }
+
+ctl_note_prev_on = {
+    if !(pb_status & PB_STATUS_MIDIOUT) || ctl_note_prev { ret }
+    ctl_note_prev = 120 - ctl_sel_by
+    pb_event(ctl_note_prev - 1, 0x7F, 0x90)
+}
+
+ctl_note_prev_off = {
+    if !(pb_status & PB_STATUS_MIDIOUT) || !ctl_note_prev { ret }
+    pb_event(ctl_note_prev - 1, 0x7F, 0x80)
+    ctl_note_prev = 0
+}
+
+ctl_mode_default = {
+    $$     = ctl_mode_action
+    $btnd  = EVT_BUTTONDOWN
+    $btnu  = EVT_BUTTONUP
+    $ctrl  = EVT_FLAG_CTRL
+    $alt   = EVT_FLAG_ALT
+
+    $mode  =  $$(0, 0, 0, 0, {})
+
+    $sel = {
+        $alt  = !!($3 & EVT_FLAG_ALT)
+        $ctrl = !!($3 & EVT_FLAG_CTRL)
+
+        $xstep = -($2 == KEY_LEFT) + ($2 == KEY_RIGHT)
+        $ystep = -($2 == KEY_UP)   + ($2 == KEY_DOWN)
+
+        $xrate = pat_lpb * $alt + pat_bar() * $ctrl
+        $yrate = 6       * $alt + 12        * $ctrl
+
+        $xstep * ($xrate + !$xrate)
+        $ystep * ($yrate + !$yrate)
+
+        ctl_sel($xstep, $ystep, $3 & EVT_FLAG_SHIFT)
+    }
+
+    $shift = 0
+
+    for ($i = 0; $i < 2; $i + 1) {
+        for ($j = 0; $j < 12; $j + 1) {
+            $$($mode, $btnd, choice($j & 3, KEY_LEFT, KEY_RIGHT, KEY_DOWN,
+               KEY_UP), $shift | choice($j >> 2, 0, $alt, $ctrl), $sel)
+        }
+
+        $$($mode, $btnd, KEY_HOME, $shift | 0,
+           { ctl_sel_bx = 0
+             ctl_sel(0, 0, $3 & EVT_FLAG_SHIFT) })
+
+        $$($mode, $btnd, KEY_END,  $shift | 0,
+           { ctl_sel_bx = pat_len - 1
+             ctl_sel(0, 0, $3 & EVT_FLAG_SHIFT) })
+
+        $$($mode, $btnd, KEY_PAGEDOWN, $shift | 0,
+           { ctl_sel( 0, ui_cam_h, $3 & EVT_FLAG_SHIFT) })
+
+        $$($mode, $btnd, KEY_PAGEUP, $shift | 0,
+           { ctl_sel( 0,-ui_cam_h, $3 & EVT_FLAG_SHIFT) })
+
+        $shift = EVT_FLAG_SHIFT
+    }
+
+    $$($mode, $btnd, 'a', $ctrl, {
+        ctl_sel_ax = 0            ctl_sel_ay = 0
+        ctl_sel_bx = pat_len - 1  ctl_sel_by = 119
+        ctl_sel(0, 0, 1)
+    })
+
+    $evt_len_dec = { ui_brush = 0xFF ui_refresh = 1
+                     ctl_evt_len - !!ctl_evt_len }
+
+    $evt_len_inc = { ui_brush = 0xFF ui_refresh = 1
+                     ctl_evt_len + 1 }
+
+    $$($mode, $btnd, '[', 0, $evt_len_dec)
+    $$($mode, $btnd, ']', 0, $evt_len_inc)
+
+    /* Functional Keys */
+    $$($mode, $btnd, KEY_F1,  0, { ui_help      = 1
+                                ui_help_line = 0
+                                ui_refresh   = 1
+                                ctl_mode     = ctl_mode_help})
+
+    $$($mode, $btnd, KEY_F2,  0, ui_status)
+
+    $pat_set_len = {
+        $step = -($2 == KEY_F3) + ($2 == KEY_F4);
+        if $3 & EVT_FLAG_CTRL { $step * 0x10 }
+
+        ui_refresh = 1
+        ui_pat_len = 0xFF
+
+        pat_set_len(pat_len + $step)
+        if ctl_sel_aob() { ctl_sel(0, 0, 0) }
+    }
+
+    $$($mode, $btnd, KEY_F3,  0,     $pat_set_len)
+    $$($mode, $btnd, KEY_F4,  0,     $pat_set_len)
+    $$($mode, $btnd, KEY_F3,  $ctrl, $pat_set_len)
+    $$($mode, $btnd, KEY_F4,  $ctrl, $pat_set_len)
+
+    $set_module = {
+        $step = ($2 == KEY_F4) - ($2 == KEY_F3 && !!pat_mod)
+        if $3 & EVT_FLAG_CTRL { $step * 0x10 }
+
+        ui_refresh = 1
+        ui_module  = 0xFF
+        pat_mod    + $step
+    }
+
+    $$($mode, $btnd, KEY_F3,  $shift, $set_module)
+    $$($mode, $btnd, KEY_F4,  $shift, $set_module)
+    $$($mode, $btnd, KEY_F3,  $ctrl | $shift, $set_module)
+    $$($mode, $btnd, KEY_F4,  $ctrl | $shift, $set_module)
+
+    $set_bpmtpl = {
+        ui_refresh = 1
+        ui_bpmtpl  = 0xFF
+
+        if $3 & EVT_FLAG_SHIFT {
+            pat_tpl - (pat_tpl > 1    && $2 == KEY_F5)
+            pat_tpl + (pat_tpl < 31   && $2 == KEY_F6)
+        } else {
+            pat_bpm - (pat_bpm > 1    && $2 == KEY_F5)
+            pat_bpm + (pat_bpm < 1000 && $2 == KEY_F6)
+        }
+    }
+
+    $$($mode, $btnd, KEY_F5,  0,      $set_bpmtpl)
+    $$($mode, $btnd, KEY_F6,  0,      $set_bpmtpl)
+    $$($mode, $btnd, KEY_F5,  $shift, $set_bpmtpl)
+    $$($mode, $btnd, KEY_F6,  $shift, $set_bpmtpl)
+
+    $set_grid_size = {
+        ui_refresh   = 1
+        ui_grid = 0xFF
+
+        if $3 & EVT_FLAG_SHIFT {
+            pat_bpb - (pat_bpb > 2  && $2 == KEY_F7)
+            pat_bpb + (pat_bpb < 32 && $2 == KEY_F8)
+        } else {
+            pat_lpb - (pat_lpb > 2  && $2 == KEY_F7)
+            pat_lpb + (pat_lpb < 32 && $2 == KEY_F8)
+        }
+    }
+
+    $$($mode, $btnd, KEY_F7,  0,      $set_grid_size)
+    $$($mode, $btnd, KEY_F8,  0,      $set_grid_size)
+    $$($mode, $btnd, KEY_F7,  $shift, $set_grid_size)
+    $$($mode, $btnd, KEY_F8,  $shift, $set_grid_size)
+
+    $$($mode, $btnd, KEY_F9,  0, { pb_play(0) })
+    $$($mode, $btnd, KEY_F10, 0, { pb_play(ctl_sel_bx) })
+    $$($mode, $btnd, KEY_F11, 0, { pb_stop()
+                                   ui_msg("Playback stopped")})
+
+    $$($mode, $btnd, KEY_F12, 0,      pb_midiout_init)
+    $$($mode, $btnd, KEY_F12, $shift, pb_midiout_deinit)
+
+    $$($mode, $btnd, KEY_F12, $ctrl, {
+        pb_midi_c = (pb_midi_c + 1) & 15
+        $s = ""
+        sprintf($s, "MIDI channel %d is selected", pb_midi_c + 1)
+        ui_msg($s)
+    })
+
+    /* Editing */
+    $$($mode, $btnd, KEY_DELETE, 0,       { edit(EDIT_DELETE) })
+    $$($mode, $btnd, KEY_SPACE,  0,       { edit(EDIT_EVENT) })
+    $$($mode, $btnd, KEY_SPACE,  $shift,  {
+        edit(EDIT_EVENT)
+
+        if !ui_keys_scale { ret }
+
+        $i = 0 while ($i < 2) {
+            ctl_sel_by - 1
+            if ctl_sel_aob() { break }
+            $i + !!(ui_keys_scale & (1 << (119 - ctl_sel_by) % 12))
+        }
+
+        ctl_sel(0, 0, 0)
+    })
+
+    $ctsh = $ctrl | $shift
+
+    $$($mode, $btnd, ']', $ctrl, { edit(EDIT_ELEN_INC) })
+    $$($mode, $btnd, '[', $ctrl, { edit(EDIT_ELEN_DEC) })
+    $$($mode, $btnd, 'i', $ctrl, { edit(EDIT_CUTRANSP) })
+    $$($mode, $btnd, 'k', $ctrl, { edit(EDIT_CDTRANSP) })
+    $$($mode, $btnd, 'j', $ctrl, { edit(EDIT_CLSHIFT)  })
+    $$($mode, $btnd, 'l', $ctrl, { edit(EDIT_CRSHIFT)  })
+    $$($mode, $btnd, ';', $ctrl, { edit(EDIT_HFLIP)    })
+    $$($mode, $btnd, '\'',$ctrl, { edit(EDIT_VFLIP)    })
+    $$($mode, $btnd, ',', $ctrl, { edit(EDIT_SHRINK)   })
+    $$($mode, $btnd, '.', $ctrl, { edit(EDIT_EXPAND)   })
+    $$($mode, $btnd, 'z', $ctrl, { edit(EDIT_UNDO)     })
+    $$($mode, $btnd, 'y', $ctrl, { edit(EDIT_REDO)     })
+    $$($mode, $btnd, 'x', $ctrl, { edit(EDIT_CUT)      })
+    $$($mode, $btnd, 'c', $ctrl, { edit(EDIT_COPY)     })
+    $$($mode, $btnd, 'v', $ctrl, { edit(EDIT_PASTE)    })
+    $$($mode, $btnd, 'm', $ctrl, { edit(EDIT_MERGE)    })
+    $$($mode, $btnd, 'd', $ctrl, { edit(EDIT_HDUP)     })
+    $$($mode, $btnd, 'd', $ctsh, { edit(EDIT_VDUP)     })
+
+    /* Project */
+    $$($mode, $btnd, 's', $ctrl, pat_save)
+    $$($mode, $btnd, 's', $ctsh, pat_saveas)
+    $$($mode, $btnd, 'o', $ctrl, pat_open)
+    $$($mode, $btnd, 'e', $ctrl, pat_c2sv)
+    $$($mode, $btnd, 'n', $ctrl, pat_new)
+
+    /* Keyjazzing */
+    $$($mode, 0, 0, 0, {
+        if !(pb_status & PB_STATUS_MIDIOUT) { ret }
+        if !in($1, EVT_BUTTONDOWN, EVT_BUTTONUP) { ret }
+        $keys = "zsxdcvgbhnjmq2w3er5t6y7u"
+
+        for ($key = 0; $key < 24; $key + 1) {
+            if $2 != $keys[$key] { continue }
+
+            if $1 == EVT_BUTTONDOWN {
+                $oct = (119 - ctl_sel_by) div 12
+                if ctl_keyjazz[$key] { break }
+                ctl_keyjazz[$key] = $oct + 1
+                pb_event($oct * 12 + $key, 0x7F, 0x90)
+                break
+            }
+            if $1 == EVT_BUTTONUP {
+                $oct = ctl_keyjazz[$key] - 1
+                ctl_keyjazz[$key] = 0
+                pb_event($oct * 12 + $key, 0x7F, 0x80)
+                break
+            }
+        }
+        ui_refresh = 1
+    })
+
+    $$($mode, $btnd, KEY_SPACE, $shift, ctl_note_prev_on)
+    $$($mode, $btnu, KEY_SPACE, $shift, ctl_note_prev_off)
+
+    $$($mode, $btnd, KEY_SPACE, 0, ctl_note_prev_on)
+    $$($mode, $btnu, KEY_SPACE, 0, ctl_note_prev_off)
+
+    /* Piano scale */
+
+    $$($mode, $btnd, '\\', $ctrl, {
+        ui_keys_scale = (ui_keys_scale >> 1) | (ui_keys_scale << 11)
+        ui_keys_scale & 0xFFF
+        ui_refresh = 1
+    })
+
+    $$($mode, $btnd, '\\', $ctrl | $shift, {
+        ui_keys_scale = (ui_keys_scale << 1) | (ui_keys_scale >> 11)
+        ui_keys_scale & 0xFFF
+        ui_refresh = 1
+    })
+
+    $$($mode, $btnd, '/', $ctrl, {
+        $s = textinput_dialog(-1, "Enter the scale code")
+        if $s < 0 { ret }
+        ui_keys_scale = str_to_num($s) & 0xFFF
+        remove($s)
+        ui_refresh = 1
+    })
+
+    $$($mode, $btnd, '/', $ctrl | $shift, {
+        ui_keys_scale = PIENO_SCALE
+        ui_refresh = 1
+    })
+
+
+    /* Mouse drive */
+    $mouse_scroll = {
+        $step = ($2 == KEY_MOUSE_SCROLLDOWN) -
+                ($2 == KEY_MOUSE_SCROLLUP)
+
+        $shift = $3 & EVT_FLAG_SHIFT
+
+        if $3 & EVT_FLAG_CTRL {
+            ctl_sel(-$step, 0, $shift)
+            ret
+        }
+
+        ctl_sel(0, $step, $shift)
+    }
+
+    $k_scrld = KEY_MOUSE_SCROLLDOWN
+    $k_scrlu = KEY_MOUSE_SCROLLUP
+    $k_ml    = KEY_MOUSE_LEFT
+    $k_mr    = KEY_MOUSE_RIGHT
+
+    $mbtnd   = EVT_MOUSEBUTTONDOWN
+    $mbtnu   = EVT_MOUSEBUTTONUP
+    $mmove   = EVT_MOUSEMOVE
+
+    for ($i = 0; $i < 8; $i + 1) {
+        $$(
+            $mode, $mbtnd,
+            choice($i & 1, $k_scrlu, $k_scrld),
+            choice(!!($i & 0b10), 0, $ctrl) |
+            choice(!!($i & 0b100), 0, $shift),
+            $mouse_scroll
+        )
+    }
+
+    $$($mode, $mbtnd, $k_scrlu, $alt, $evt_len_inc)
+    $$($mode, $mbtnd, $k_scrld, $alt, $evt_len_dec)
+
+    $mouse_drive = {
+        $mousemove = $1 == EVT_MOUSEMOVE
+        if $mousemove && !ctl_mouse_l { ret }
+
+        if ($1 == EVT_MOUSEBUTTONDOWN) &&
+           ($2 == KEY_MOUSE_LEFT) {
+            ctl_mouse_l = 1
+
+            if ($3 & EVT_FLAG_DOUBLECLICK) {
+                ctl_note_prev_on()
+                edit(EDIT_EVENT)
+            }
+        }
+
+        $x = (EVT[EVT_X] >> 3) + (TB_W >> 1) - ui_keys_size
+        $y = (EVT[EVT_Y] >> 4) + (TB_H >> 1)
+
+        $bx = ctl_sel_bx
+        $by = ctl_sel_by
+
+        ctl_sel_bx = ui_cam_x + $x
+        ctl_sel_by = ui_cam_y + $y
+
+        if !($bx - ctl_sel_bx) &&
+           !($by - ctl_sel_by) { ret }
+
+        ctl_sel(0, 0, $mousemove)
+    }
+
+
+    $$($mode, $mmove, 0,     0, $mouse_drive)
+    $$($mode, $mbtnd, $k_ml, 0, $mouse_drive)
+    $$($mode, $mbtnu, $k_ml, 0, {
+        ctl_mouse_l = 0 ctl_note_prev_off()
+    })
+
+    ret ($mode)
+} ctl_mode_default = ctl_mode_default()
+
+
+ctl_mode_help = {
+    $$       = ctl_mode_action
+    $btnd    = EVT_BUTTONDOWN
+    $mbtnd   = EVT_MOUSEBUTTONDOWN
+    $mmove   = EVT_MOUSEMOVE
+    $k_scrld = KEY_MOUSE_SCROLLDOWN
+    $k_scrlu = KEY_MOUSE_SCROLLUP
+    $k_ml    = KEY_MOUSE_LEFT
+    $k_mr    = KEY_MOUSE_RIGHT
+
+    $mode =  $$(0, 0, 0, 0, {})
+
+    $$($mode, $btnd, KEY_F1, 0, {
+        ui_help    = 0
+        ui_refresh = 1
+        ctl_mode   = ctl_mode_default
+    })
+
+    $scrollup = {
+        ui_help_line - !!ui_help_line
+        ui_refresh = 1
+    }
+
+    $scrolldown = {
+        ui_help_line + (ui_help_line < help_lines - TB_H)
+        ui_refresh = 1
+    }
+
+    $$($mode, $btnd,  KEY_UP,   0, $scrollup)
+    $$($mode, $btnd,  KEY_DOWN, 0, $scrolldown)
+    $$($mode, $mbtnd, $k_scrlu, 0, $scrollup)
+    $$($mode, $mbtnd, $k_scrld, 0, $scrolldown)
+
+    ret ($mode)
+} ctl_mode_help = ctl_mode_help()
+
+fn ctl_mode_action($mode, $type, $key, $flags, $action) {
+    if !$mode { $mode = new(4, 1, INT) $j = 0 }
+    else      { $j = get_ysize($mode) resize($mode, 4, $j + 1) }
+
+    for ($i = 0; $i < $0 - 1; $i + 1) {
+        $arg = $i + 1
+        $mode[$i, $j] = $[$arg]
+    }
+
+    ret ($mode)
+}
+
+ctl_mode = ctl_mode_default
