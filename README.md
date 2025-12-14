@@ -1,3 +1,3 @@
 # Pienoroll
 
-SunVoc compatible piano roll editor
+SunVox compatible piano roll editor
